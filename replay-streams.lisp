@@ -53,3 +53,16 @@
 
 (defmethod rewound-p ((stream replay-character-stream))
   (slot-value stream 'replay-mode))
+
+(defgeneric replay-finished (stream)
+  (:documentation "Returns T when reads replay is concluded, meaning that subsequent reads affect the underlying stream again"))
+
+(defmethod replay-finished ((stream replay-character-stream))
+  (with-slots (replay-mode replay-stream) stream
+    (and replay-mode (not (peek-char nil replay-stream nil nil)))))
+
+(defgeneric recover-source (stream)
+  (:documentation "Recover the source stream of a replay stream"))
+
+(defmethod recover-source ((stream replay-character-stream))
+  (slot-value stream 'source))
