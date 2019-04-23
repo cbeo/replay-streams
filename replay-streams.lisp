@@ -9,6 +9,9 @@
    (replay-stream :initform nil)))
 
 
+(defun replay-on (stream)
+  (make-instance 'replay-character-stream :source stream))
+
 ;; returns a char or :eof, as specified in trival-gray-streams documentation
 (defmethod stream-read-char ((stream replay-character-stream))
   (with-slots (source log replay-mode replay-stream) stream

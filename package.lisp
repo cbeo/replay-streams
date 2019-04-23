@@ -5,4 +5,5 @@
   (:export
    #:replay-character-stream
    #:rewind
-   #:rewound-p))
+   #:rewound-p
+   #:replay-on))
