@@ -70,7 +70,7 @@
   the stream was rewound. Returns NIL if the stream had already been rewound."))
 
 (defmethod rewind ((rp-stream replay-character-stream))
-  (with-slots (log replay-mode replay-stream)
+  (with-slots (log replay-mode replay-stream) rp-stream
       (if replay-mode (values rp-stream nil)
           (progn
             (setf replay-mode t)
