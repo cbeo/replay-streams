@@ -77,7 +77,7 @@ CL-USER> (let ((buf (make-string 10)))
 CL-USER> (let ((buf (make-string 10)))
            (read-sequence buf *rpstream*)
            buf)
-"string!"
+"string!^@^@^@"
 
 CL-USER> (rewind *rpstream*)       ;; YOU CAN ONLY REWIND ONCE
 #<SB-IMPL::STRING-INPUT-STREAM {10042D0F83}>
