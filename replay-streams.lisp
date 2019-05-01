@@ -8,6 +8,39 @@
    (replay-mode :initform nil)
    (replay-stream :initform nil)))
 
+(defclass static-text-replay-stream (fundamental-character-input-stream)
+  ((text :initarg :text)
+   (head :initform 0)))
+
+(defmethod stream-read-char ((stream static-text-replay-stream))
+  (with-slots (text head) stream
+    (if (>= head (length text))
+        :eof
+        (progn
+          (incf head)
+          (aref text (- head 1))))))
+
+(defmethod stream-unread-char ((stream static-text-replay-stream) char)
+  (with-slots (head) stream
+    (when (> head 0) (decf head))
+    nil))
+
+(defgeneric checkpoint (stream)
+  (:documentation "Creates a reference that can be used to rewind the stream at a later time."))
+
+(defmethod checkpoint ((stream static-text-replay-stream))
+  (with-slots (head) stream
+    head))
+  ;(slot-value stream 'head))
+
+(defgeneric rewind-to (stream checkpoint)
+  (:documentation "Rewinds the stream to the checkpoint"))
+
+(defmethod rewind-to ((stream static-text-replay-stream) checkpoint)
+  (with-slots (head) stream
+    (setf head checkpoint)))
+  ;;(setf (slot-value stream 'head) checkpoint))
+
 (defun replay-on (stream)
   (make-instance 'replay-character-stream :source stream))
 
