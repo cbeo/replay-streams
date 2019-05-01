@@ -4,7 +4,7 @@
 
 (defclass replay-character-stream (fundamental-character-input-stream)
   ((source :initarg :source)
-   (log :initform (make-array 256 :element-type 'character :adjustable t :fill-pointer 0))
+   (log :initform (make-array 8 :element-type 'character :adjustable t :fill-pointer 0))
    (replay-mode :initform nil)
    (replay-stream :initform nil)))
 
