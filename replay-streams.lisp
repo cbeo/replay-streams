@@ -2,6 +2,38 @@
 
 (in-package #:replay-streams)
 
+
+;;;; THE STREAM GENERICS
+
+(defgeneric checkpoint (stream)
+  (:documentation "Creates a reference that can be used to rewind the stream at a later time."))
+
+(defgeneric rewind-to (stream checkpoint)
+  (:documentation "Rewinds the stream to the checkpoint"))
+
+
+;; DEPRECATED
+(defgeneric rewind (rp-stream)
+  (:documentation "Rewinds a stream and returns it. Returns a second value, T if
+  the stream was rewound. Returns NIL if the stream had already been rewound."))
+
+;; DEPRECATED
+(defgeneric rewound-p (stream)
+  (:documentation "Returns T if the stream has been rewound."))
+
+;; DEPRECATED
+(defgeneric replay-finished-p (stream)
+  (:documentation "Returns T when reads replay is concluded, meaning that subsequent reads affect the underlying stream again"))
+
+;; DEPRECATED
+(defgeneric recover-source (stream)
+  (:documentation "Recover the source stream of a replay stream"))
+
+
+;;;; THE CLASSES
+
+
+;; DEPRECATED
 (defclass replay-character-stream (fundamental-character-input-stream)
   ((source :initarg :source)
    (log :initform (make-array 8 :element-type 'character :adjustable t :fill-pointer 0))
@@ -11,6 +43,9 @@
 (defclass static-text-replay-stream (fundamental-character-input-stream)
   ((text :initarg :text)
    (head :initform 0)))
+
+
+;;;; TRIVAL-GRAY-STREAMS SUPPORT
 
 (defmethod stream-read-char ((stream static-text-replay-stream))
   (with-slots (text head) stream
@@ -25,24 +60,7 @@
     (when (> head 0) (decf head))
     nil))
 
-(defgeneric checkpoint (stream)
-  (:documentation "Creates a reference that can be used to rewind the stream at a later time."))
 
-(defmethod checkpoint ((stream static-text-replay-stream))
-  (with-slots (head) stream
-    head))
-  ;(slot-value stream 'head))
-
-(defgeneric rewind-to (stream checkpoint)
-  (:documentation "Rewinds the stream to the checkpoint"))
-
-(defmethod rewind-to ((stream static-text-replay-stream) checkpoint)
-  (with-slots (head) stream
-    (setf head checkpoint)))
-  ;;(setf (slot-value stream 'head) checkpoint))
-
-(defun replay-on (stream)
-  (make-instance 'replay-character-stream :source stream))
 
 (defun stream-log-push (log char)
   (destructuring-bind (size) (array-dimensions log)
@@ -51,7 +69,7 @@
       (adjust-array log (* 2 size) :element-type 'character :fill-pointer (length log)))
   (vector-push char log)))
 
-;; returns a char or :eof, as specified in trival-gray-streams documentation
+;; DEPRECATED
 (defmethod stream-read-char ((stream replay-character-stream))
   (with-slots (source log replay-mode replay-stream) stream
     (cond
@@ -78,7 +96,7 @@
            (read-char source)
            :eof)))))
 
-
+;; DEPRECATED
 (defmethod stream-unread-char ((stream replay-character-stream) char)
   (with-slots (source log replay-mode replay-stream) stream
     (cond ((not replay-mode)
@@ -98,9 +116,23 @@
            (unread-char char source)))))
 
 
-(defgeneric rewind (rp-stream)
-  (:documentation "Rewinds a stream and returns it. Returns a second value, T if
-  the stream was rewound. Returns NIL if the stream had already been rewound."))
+(defmethod checkpoint ((stream static-text-replay-stream))
+  (with-slots (head) stream
+    head))
+  ;(slot-value stream 'head))
+
+
+
+(defmethod rewind-to ((stream static-text-replay-stream) checkpoint)
+  (with-slots (head) stream
+    (setf head checkpoint)))
+  ;;(setf (slot-value stream 'head) checkpoint))
+
+(defun replay-on (stream)
+  (make-instance 'replay-character-stream :source stream))
+
+
+
 
 (defmethod rewind ((rp-stream replay-character-stream))
   (with-slots (log replay-mode replay-stream) rp-stream
@@ -110,21 +142,15 @@
             (setf replay-stream (make-string-input-stream log))
             (values rp-stream t)))))
 
-(defgeneric rewound-p (stream)
-  (:documentation "Returns T if the stream has been rewound."))
 
 (defmethod rewound-p ((stream replay-character-stream))
   (slot-value stream 'replay-mode))
 
-(defgeneric replay-finished-p (stream)
-  (:documentation "Returns T when reads replay is concluded, meaning that subsequent reads affect the underlying stream again"))
 
 (defmethod replay-finished-p ((stream replay-character-stream))
   (with-slots (replay-mode replay-stream) stream
     (and replay-mode (not (peek-char nil replay-stream nil nil)))))
 
-(defgeneric recover-source (stream)
-  (:documentation "Recover the source stream of a replay stream"))
 
 (defmethod recover-source ((stream replay-character-stream))
   (slot-value stream 'source))
