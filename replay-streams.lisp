@@ -9,41 +9,25 @@
   (:documentation "Creates a reference that can be used to rewind the stream at a later time."))
 
 (defgeneric rewind-to (stream checkpoint)
-  (:documentation "Rewinds the stream to the checkpoint"))
+  (:documentation "Rewinds the stream to the checkpoint."))
 
-
-;; DEPRECATED
-(defgeneric rewind (rp-stream)
-  (:documentation "Rewinds a stream and returns it. Returns a second value, T if
-  the stream was rewound. Returns NIL if the stream had already been rewound."))
-
-;; DEPRECATED
-(defgeneric rewound-p (stream)
-  (:documentation "Returns T if the stream has been rewound."))
-
-;; DEPRECATED
-(defgeneric replay-finished-p (stream)
-  (:documentation "Returns T when reads replay is concluded, meaning that subsequent reads affect the underlying stream again"))
-
-;; DEPRECATED
-(defgeneric recover-source (stream)
-  (:documentation "Recover the source stream of a replay stream"))
-
+(defgeneric free-checkpoint (stream point)
+  (:documentation "Indicates that a particular checkpoint is no longer needed."))
 
 ;;;; THE CLASSES
-
-
-;; DEPRECATED
-(defclass replay-character-stream (fundamental-character-input-stream)
-  ((source :initarg :source)
-   (log :initform (make-array 8 :element-type 'character :adjustable t :fill-pointer 0))
-   (replay-mode :initform nil)
-   (replay-stream :initform nil)))
 
 (defclass static-text-replay-stream (fundamental-character-input-stream)
   ((text :initarg :text)
    (head :initform 0)))
 
+
+(defclass character-input-replay-stream (fundamental-character-input-stream)
+  ((source :initarg :source)
+   (source-head :initform 0)
+   (head :initform 0)
+   (checkpoints :initform nil)
+   (log :initarg nil)
+   (log-start :initarg nil)))
 
 ;;;; TRIVAL-GRAY-STREAMS SUPPORT
 
@@ -61,6 +45,65 @@
     nil))
 
 
+(defmethod stream-read-char ((stream character-input-replay-stream))
+  (with-slots (source source-head head checkpoints log log-start) stream
+    (cond
+      ;; if there is no log and there are no checkpoints, then read normally
+      ((and (null log)
+            (null checkpoints))
+       (if (peek-char nil source nil nil)
+           (read-char source)
+           :eof))
+
+      ;; if the head is less than source-head, then we're reading from the log
+      ((< head source-head)
+       (incf head)   ;; order matters, we use the incremented value next
+       (aref log (- head log-start 1)))
+
+      ;; otherwise we're reading from the stream but we may be logging our reads
+      ;; so if we're not at the end of the input, we've got some stuff to do
+      ((peek-char nil source nil nil)
+       (let ((char (read-char source)))
+         (incf head)
+         (incf source-head)
+
+         (if checkpoints
+             ;; if there are active checkpoints, we log this read
+             (stream-log-push log char)
+             ;; otherwise we set the log to nil
+             (setf log nil))
+
+         ;; finally we return the read char
+         char))
+
+      ;; otherwise we're at the end
+      (t :eof))))
+
+
+(defmethod stream-unread-char ((stream character-input-replay-stream) char)
+  (with-slots (source source-head head checkpoints log) stream
+    (cond
+      ;; not logging, we're just working with the source stream
+      ((and (null log) (null checkpoints))
+       (decf head)
+       (decf source-head)
+       (unread-char char source))
+
+      ;; we are reading-from the log
+      ((< head source-head)
+       (decf head))
+
+      ;; otherwise we're reading from the source, but might be logging
+      (t
+       ;; if there are checpoints, then we're logging, so we pop the log
+       (when checkpoints
+         (vector-pop log))
+
+       ;; otherwise this is just like the first condition
+       (decf head)
+       (decf source-head)
+       (unread-char char source)))))
+
 
 (defun stream-log-push (log char)
   (destructuring-bind (size) (array-dimensions log)
@@ -69,88 +112,43 @@
       (adjust-array log (* 2 size) :element-type 'character :fill-pointer (length log)))
   (vector-push char log)))
 
-;; DEPRECATED
-(defmethod stream-read-char ((stream replay-character-stream))
-  (with-slots (source log replay-mode replay-stream) stream
-    (cond
-      ;; If we are not in replay mode, we read from the source and write to the log.
-      ((not replay-mode) (if (peek-char nil source nil nil)
-                             (let ((c (read-char source)))
-                               (stream-log-push log c)
-                               c)
-                             :eof))
-      ;; Otherwise we must be in replay mode.
-      ;; We check for data in the replay-stream and return it
-      ((and replay-stream (peek-char nil replay-stream nil nil)) (read-char replay-stream))
 
-      ;; If the replay stream is null or empty, we make sure to close it if
-      ;; necessary and then we just return characters from the source for the
-      ;; rest of this instance's lifetime
-      (t
-       ;; destroy replay stream if necessary
-       (when replay-stream
-         (close replay-stream)
-         (setf replay-stream nil))
-       ;; and read froom source
-       (if (peek-char nil source nil nil)
-           (read-char source)
-           :eof)))))
-
-;; DEPRECATED
-(defmethod stream-unread-char ((stream replay-character-stream) char)
-  (with-slots (source log replay-mode replay-stream) stream
-    (cond ((not replay-mode)
-           ;; we're not replaying, so we have to remove the character from the
-           ;; log and put and unread it from the source stream
-           (vector-pop log)
-           (unread-char char source))
-
-          ((and replay-mode replay-stream)
-           ;; we're currently replaying content from the non-nill replay-stream
-           (unread-char char replay-stream))
-
-          (t
-           ;; we're in replay-mode (hence not logging), but we've already
-           ;; consumed all the recorded content, so it's really just the source
-           ;; stream that we need to unread.
-           (unread-char char source)))))
-
+;;; METHOD IMPLEMENTATIONS: STATIC-TEXT-REPLAY-STREAM
 
 (defmethod checkpoint ((stream static-text-replay-stream))
   (with-slots (head) stream
     head))
-  ;(slot-value stream 'head))
-
-
 
 (defmethod rewind-to ((stream static-text-replay-stream) checkpoint)
   (with-slots (head) stream
-    (setf head checkpoint)))
-  ;;(setf (slot-value stream 'head) checkpoint))
+    (setf head checkpoint))
+  t)
 
-(defun replay-on (stream)
-  (make-instance 'replay-character-stream :source stream))
+(defmethod free-checkpoint ((stream static-text-replay-stream) checkpoint)
+  t)
 
+;;; METHOD IMPLEMENTATIONS: CHARACTER-INPUT-REPLAY-STREAM
 
+(defmethod checkpoint ((stream character-input-replay-stream))
+  (with-slots (head checkpoints log log-start) stream
 
+    ;; if the log does not already exist, make a new one and set the log-start
+    (when (not log)
+      (setf log (make-array 64 :element-type 'character :adjustable t :fill-pointer 0))
+      (setf log-start head))
 
-(defmethod rewind ((rp-stream replay-character-stream))
-  (with-slots (log replay-mode replay-stream) rp-stream
-      (if replay-mode (values rp-stream nil)
-          (progn
-            (setf replay-mode t)
-            (setf replay-stream (make-string-input-stream log))
-            (values rp-stream t)))))
+    ;; add the checkpoint and return it
+    (push head checkpoints)
+    head))
 
+(defmethod rewind-to ((stream character-input-replay-stream) point)
+  (with-slots (head checkpoints) stream
+    (setf head point)
+    ;; reqinding to a point clobbers all "future" checkpoints
+    (setf checkpoints (remove-if (lambda (pt) (>= pt point)) checkpoints))
+    t))
 
-(defmethod rewound-p ((stream replay-character-stream))
-  (slot-value stream 'replay-mode))
-
-
-(defmethod replay-finished-p ((stream replay-character-stream))
-  (with-slots (replay-mode replay-stream) stream
-    (and replay-mode (not (peek-char nil replay-stream nil nil)))))
-
-
-(defmethod recover-source ((stream replay-character-stream))
-  (slot-value stream 'source))
+(defmethod free-checkpoint ((stream character-input-replay-stream) point)
+  (with-slots (checkpoints) stream
+    (setf checkpoints (remove point checkpoints)))
+  t)

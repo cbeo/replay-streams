@@ -4,12 +4,8 @@
   (:use #:cl #:trivial-gray-streams)
   (:export
    #:checkpoint
-   #:recover-source
-   #:replay-character-stream
-   #:replay-finished-p
-   #:replay-on
-   #:rewind
    #:rewind-to
-   #:rewound-p
+   #:free-checkpoint
+   #:character-input-replay-stream
    #:static-text-replay-stream
    ))
