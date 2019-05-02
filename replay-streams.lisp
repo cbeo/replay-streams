@@ -26,8 +26,8 @@
    (source-head :initform 0)
    (head :initform 0)
    (checkpoints :initform nil)
-   (log :initarg nil)
-   (log-start :initarg nil)))
+   (log :initform nil)
+   (log-start :initform nil)))
 
 ;;;; TRIVAL-GRAY-STREAMS SUPPORT
 
