@@ -45,24 +45,36 @@
     nil))
 
 
+(defun stream-log-push (log char)
+  (destructuring-bind (size) (array-dimensions log)
+    (when (<= size (length log))
+      ;; thanks to (eq a (adjust-array a ...)) I don't need to worry
+      (adjust-array log (* 2 size) :element-type 'character :fill-pointer (length log)))
+    (vector-push char log)))
+
+
 (defmethod stream-read-char ((stream character-input-replay-stream))
   (with-slots (source source-head head checkpoints log log-start) stream
     (cond
-      ;; if there is no log and there are no checkpoints, then read normally
-      ((and (null log)
-            (null checkpoints))
-       (if (peek-char nil source nil nil)
-           (read-char source)
-           :eof))
-
       ;; if the head is less than source-head, then we're reading from the log
       ((< head source-head)
        (incf head)   ;; order matters, we use the incremented value next
        (aref log (- head log-start 1)))
 
+      ;; if there is no log and there are no checkpoints, then read normally
+      ((and (= head source-head)
+            (null log)
+            (null checkpoints))
+       (if (peek-char nil source nil nil)
+           (progn
+             (incf head)
+             (incf source-head)
+             (read-char source))
+           :eof))
+
       ;; otherwise we're reading from the stream but we may be logging our reads
       ;; so if we're not at the end of the input, we've got some stuff to do
-      ((peek-char nil source nil nil)
+      ((and (= head source-head) (peek-char nil source nil nil))
        (let ((char (read-char source)))
          (incf head)
          (incf source-head)
@@ -72,7 +84,6 @@
              (stream-log-push log char)
              ;; otherwise we set the log to nil
              (setf log nil))
-
          ;; finally we return the read char
          char))
 
@@ -84,7 +95,7 @@
   (with-slots (source source-head head checkpoints log) stream
     (cond
       ;; not logging, we're just working with the source stream
-      ((and (null log) (null checkpoints))
+      ((and (null log) (null checkpoints) (= head source-head))
        (decf head)
        (decf source-head)
        (unread-char char source))
@@ -96,21 +107,15 @@
       ;; otherwise we're reading from the source, but might be logging
       (t
        ;; if there are checpoints, then we're logging, so we pop the log
-       (when checkpoints
+       (when (and checkpoints
+                  (plusp (length log))
+                  (eql char (aref log (1- (length log)))))
          (vector-pop log))
 
        ;; otherwise this is just like the first condition
        (decf head)
        (decf source-head)
        (unread-char char source)))))
-
-
-(defun stream-log-push (log char)
-  (destructuring-bind (size) (array-dimensions log)
-    (when (<= size (length log))
-      ;; thanks to (eq a (adjust-array a ...)) I don't need to worry
-      (adjust-array log (* 2 size) :element-type 'character :fill-pointer (length log)))
-  (vector-push char log)))
 
 
 ;;; METHOD IMPLEMENTATIONS: STATIC-TEXT-REPLAY-STREAM
@@ -142,13 +147,13 @@
     head))
 
 (defmethod rewind-to ((stream character-input-replay-stream) point)
-  (with-slots (head checkpoints) stream
+  (with-slots (head checkpoints source-head) stream
     (setf head point)
     ;; reqinding to a point clobbers all "future" checkpoints
-    (setf checkpoints (remove-if (lambda (pt) (>= pt point)) checkpoints))
+    (setf checkpoints (remove-if (lambda (pt) (>= pt head)) checkpoints))
     t))
 
 (defmethod free-checkpoint ((stream character-input-replay-stream) point)
   (with-slots (checkpoints) stream
-    (setf checkpoints (remove point checkpoints)))
+    (setf checkpoints (remove-if (lambda (pt) (>= pt point)) checkpoints)))
   t)
