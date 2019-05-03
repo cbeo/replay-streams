@@ -58,7 +58,6 @@
     (cond
       ;; if the head is less than source-head, then we're reading from the log
       ((< head source-head)
-       (format t "< head source-head~%")
        (incf head)   ;; order matters, we use the incremented value next
        (aref log (- head log-start 1)))
 
@@ -66,7 +65,6 @@
       ((and (= head source-head)
             (null log)
             (null checkpoints))
-       (format t "= head source-head, normal read~%")
        (if (peek-char nil source nil nil)
            (progn
              (incf head)
@@ -77,7 +75,6 @@
       ;; otherwise we're reading from the stream but we may be logging our reads
       ;; so if we're not at the end of the input, we've got some stuff to do
       ((and (= head source-head) (peek-char nil source nil nil))
-       (format t "head = source-head, maybe logged read~%")
        (let ((char (read-char source)))
          (incf head)
          (incf source-head)
@@ -150,14 +147,12 @@
     head))
 
 (defmethod rewind-to ((stream character-input-replay-stream) point)
-  (with-slots (head checkpoints source-head) stream
+  (with-slots (head checkpoints) stream
     (setf head point)
-    ;; reqinding to a point clobbers all "future" checkpoints
-    ;(setf checkpoints (remove-if (lambda (pt) (>= pt head)) checkpoints))
+    (setf checkpoints (remove-if (lambda (pt) (> pt head)) checkpoints))
     t))
 
 (defmethod free-checkpoint ((stream character-input-replay-stream) point)
-  ;(with-slots (checkpoints) stream
-    ;(setf checkpoints (remove point checkpoints :count 1))
-    ;(setf checkpoints (remove-if (lambda (pt) (>= pt point)) checkpoints)))
+  (with-slots (checkpoints) stream
+    (setf checkpoints (remove point checkpoints :count 1)))
   t)
