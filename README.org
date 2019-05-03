@@ -1,93 +1,69 @@
 * =replay-streams=
 
-=replay-streams= let the programmer rewind and replay an input stream, providing
-input streams with a kind of look-ahead.
+  Replay streams let the programmer rewind to points in a stream that have
+  already been read. 
 
-The implementation uses [[https://github.com/trivial-gray-streams/trivial-gray-streams][trivial-gray-streams]] under the cheese, and so
-=replay-streams= are supported in the most common of Common Lisps.
+  At the moment, replay streams only support character streams, but *should*
+  someday support more exotic binary stream types.
 
-** Basic Use
+  NOTE: *This is alpha quality software*
+  
+** The Replay Stream Types
 
-The most basic function exported by =replay-streams= is the =replay-on=
-function, which transforms an input stream into a "replayable stream". Right now
-*only character streams* are supported, but extending support to byte-oriented
-streams is on the +haruspectic+ to-do list below.  
+   The following clases are exported by the =replay-streams= package:
 
-A brief catalog of exports:
+   - =static-text-replay-stream= : This is the most efficient of the
+     =replay-streams= classes, and is analogous to =make-string-input-stream= in
+     that it transforms a string into a stream. 
 
-+ =replay-character-stream= is the *class* for replayable chracter streams.
-  - =(make-instance 'replay-character-stream :source (make-string-input-stream "Hey"))=
-  - Or, more conveniently using =replay-on=:  =(replay-on (make-string-input-stream "Hey"))=
-+ =rewind= is a =defgeneric= that is currently only implemented for
-  =replay-character-stream=, its purpose is to rewind the stream. A stream may
-  only be rewound once.
-+ =rewound-p= a predictate that tests whether or not a stream as been rewound yet.
-+ =replay-finished-p= a predicate that returns =T= if the rewound content has all
-  been read through again. That is, you rewind at some point, you can then
-  replay back to that point. =replay-finished-p= returns =T= if you've passed
-  that point from which you initially rewound.
-+ =recover-source= returns the source input stream. 
+   - =character-input-replay-stream= : This is used to transform a characer
+     input stream into a replayable stream. Suitable for reading files or
+     character network streams.
 
 
-*** Example
+*** The Replay Stream Interface
 
-#+begin_src common-lisp
+    Each class in the =replay-streams= package supports the following methods:
 
-CL-USER> (ql:quickload 'replay-streams)    ;; NOT IN QUICKLISP. Install into quicklisp/local-projects/
-To load "replay-streams":
-  Load 1 ASDF system:
-    replay-streams
-; Loading "replay-streams"
-[package replay-streams]
-(REPLAY-STREAMS)
+    - =(checkpoint stream)= : returns a "checkpoint" which you can use to rewind
+      to a specific point in your input stream.
 
-CL-USER> (use-package :replay-streams)
-T
+    - =(rewind-to stream checkpoint)= : is used to actually rewind a stream to a
+      checkpoint.
 
-CL-USER> (defvar *source* (make-string-input-stream "Hey there here is a string!"))
-*SOURCE*
+    - =(free-checkpoint stream checkpoint)= : tells the stream that it no longer
+      needs to support rewinds to the supplied checkpoint.
 
-CL-USER> (defvar *rpstream* (make-instance 'replay-character-stream 
-                                           :source *source*))
-                                           
-CL-USER> (let ((buf (make-string 10)))
-           (read-sequence buf *rpstream*)
-           buf)
-"Hey there "
+    
+**** Some Notes
 
-CL-USER> (let ((buf (make-string 10)))
-           (read-sequence buf *rpstream*)
-           buf)
-"here is a "
+     For =static-text-replay-stream= instances, =free-checkpoint= doesn't
+     actually do anything, but a dummy implementation is included to permit
+     general purpose code.
 
-CL-USER> (rewind *rpstream*)      ;; rewind returns two values, the stream and a success indicator
-#<SB-IMPL::STRING-INPUT-STREAM {10042D0F83}>
-T
+     Support for rewinding streams is enabled by logging reads to the stream. As
+     you might imagine, logging every read can take can begin to take its toll
+     on the memory heap. Hence, freeing a checkpoint can signal to the stream
+     that it may be acceptable to discard the log. Internally, the log is freed
+     whenever there are no checkpoints remaining and when any play back on the
+     log has been exhausted - i.e. whenever the log is certain to be no longer
+     needed.
 
-CL-USER> (let ((buf (make-string 10)))
-           (read-sequence buf *rpstream*)
-           buf)
-"Hey there "
+     NOTE: As it stands right now, rewinding a stream to a checkpoint will also
+     free that checkpoint and all checkpoints AFTER the rewind point.
 
-CL-USER> (let ((buf (make-string 10)))
-           (read-sequence buf *rpstream*)
-           buf)
-"here is a "
+     
+*** Why?
 
-CL-USER> (let ((buf (make-string 10)))
-           (read-sequence buf *rpstream*)
-           buf)
-"string!^@^@^@"
+    This small library was created in order to support the [[https://github.com/thegoofist/parzival][parzival]] streaming
+    parser-combinator DSL, which needs replayable streams for its implementation
+    of the =<<plus= combinator.
 
-CL-USER> (rewind *rpstream*)       ;; YOU CAN ONLY REWIND ONCE
-#<SB-IMPL::STRING-INPUT-STREAM {10042D0F83}>
-NIL
+*** [0/4] To Do
 
-#+end_src
-
-** [1/3] Haruspectic Divination
-
-- [X] Support =stream-unread-char= for =replay-character-stream= 
-- [ ] Extend support to byte-oriented streams
-- [ ] Add Test Suite
+    1. [ ] Add a test suite.
+    2. [ ] For =character-input-replay-stream=, support user control over initial log size.
+    3. [ ] For =character-input-replay-stream=, support optional maximum log.
+       size, along with an error condition if the log size is exceeded.
+    4. [ ] Support binary streams.
 
