@@ -42,12 +42,12 @@
      general purpose code.
 
      Support for rewinding streams is enabled by logging reads to the stream. As
-     you might imagine, logging every read can take can begin to take its toll
+     you might imagine, logging every read can begin to take its toll
      on the memory heap. Hence, freeing a checkpoint can signal to the stream
      that it may be acceptable to discard the log. Internally, the log is freed
-     whenever there are no checkpoints remaining and when any play back on the
-     log has been exhausted - i.e. whenever the log is certain to be no longer
-     needed.
+     whenever there are no checkpoints remaining and when any playback on the
+     log has been exhausted - i.e. whenever the system is certain that the log is 
+     no longer needed.
 
      NOTE: As it stands right now, rewinding a stream to a checkpoint will also
      free that checkpoint and all checkpoints AFTER the rewind point.
